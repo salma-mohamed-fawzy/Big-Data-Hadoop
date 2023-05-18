@@ -1,0 +1,122 @@
+///////////////////////////////////////////(combiner)
+import java.io.IOException;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Reducer;
+
+
+public class indexercombiner extends Reducer<Text, Text, Text, Text> {
+
+    private final Text fileAtWordFreqValue = new Text();
+    @Override
+    protected void reduce(Text key, java.lang.Iterable<Text> values,
+                          Context context) throws IOException ,InterruptedException {
+        int sum = 0;
+ for(Text value:values) {
+            sum += Integer.parseInt(value.toString());
+        }
+        int splitIndex = key.toString().indexOf("@");
+
+        fileAtWordFreqValue.set(key.toString().substring(splitIndex+1)+":"+sum);
+        key.set(key.toString().substring(0,splitIndex));
+        context.write(key, fileAtWordFreqValue);
+    }
+}
+
+////////////////////////////////////////////(driver)
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+
+public class indexerdriver {
+
+    public static void main(String[] args) throws Exception {
+        if (args.length != 2) {
+            System.err.println("Usage IndexDriver <input_dir> <output_dir>");
+            System.exit(2);
+        }
+        
+        Configuration conf = new Configuration();
+        String input = args[0];
+        String output = args[1];
+
+        FileSystem fs = FileSystem.get(conf);
+        boolean exists = fs.exists(new Path(output));
+
+ if(exists) {
+            fs.delete(new Path(output), true);
+        }
+        Job job = Job.getInstance(conf);
+        job.setJarByClass(indexerdriver.class);
+        job.setMapperClass(indexermapper.class);
+        job.setCombinerClass(indexercombiner.class);
+        job.setReducerClass(indexerreducer.class);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+        
+        FileInputFormat.addInputPath(job, new Path(input));
+        FileOutputFormat.setOutputPath(job, new Path(output));
+        System.exit(job.waitForCompletion(true)?0:1);
+
+    }
+
+}
+
+
+/////////////////////////////////////////////(mapper)
+
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.lib.input.FileSplit;
+
+import java.io.IOException;
+import java.util.StringTokenizer;
+
+
+public class indexermapper extends Mapper<LongWritable, Text, Text, Text> {
+    private final Text wordAtFileNameKey = new Text();
+    private final Text ONE_STRING = new Text("1");
+
+ @Override
+    protected void map(LongWritable key, Text value,
+                       Context context) throws IOException, InterruptedException {
+        FileSplit split = (FileSplit) context.getInputSplit();
+        StringTokenizer tokenizer = new StringTokenizer(value.toString());
+        
+        while (tokenizer.hasMoreTokens()) {
+            String fileName = split.getPath().getName().split("\\.")[0];
+            //remove special char using
+            // tokenizer.nextToken().replaceAll("[^a-zA-Z]", "").toLowerCase()
+            //check for empty words
+            wordAtFileNameKey.set(tokenizer.nextToken() + "@" + fileName);
+            context.write(wordAtFileNameKey, ONE_STRING);
+        }
+
+    }
+}
+
+////////////////////////////////////////////(reducer)
+
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Reducer;
+
+public class indexerreducer extends Reducer<Text, Text, Text, Text> {
+
+    private final Text allFilesConcatValue = new Text();
+    @Override
+    protected void reduce(Text key, Iterable<Text> values,
+                          Context context) throws java.io.IOException ,InterruptedException {
+        StringBuilder filelist = new StringBuilder("");
+        
+ for(Text value:values) {
+            filelist.append(value.toString()).append(";");
+        }
+        allFilesConcatValue.set(filelist.toString());
+        context.write(key, allFilesConcatValue);
+    };
+}

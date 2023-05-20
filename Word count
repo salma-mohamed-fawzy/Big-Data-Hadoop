@@ -11,23 +11,22 @@ import org.apache.hadoop.mapred.Reporter;
  
 public class WCMapper extends MapReduceBase implements Mapper<LongWritable,
                                                 Text, Text, IntWritable> {
- 
-    // Map function
-    public void map(LongWritable key, Text value, OutputCollector<Text,
-                 IntWritable> output, Reporter rep) throws IOException
-    {
- 
-        String line = value.toString();
- 
-        // Splitting the line on spaces
-        for (String word : line.split(" "))
+
+// Map function
+public void map(LongWritable key, Text value, OutputCollector<Text,
+IntWritable> output, Reporter rep) throws IOException
+{
+    String line = value.toString();
+    String newLine = line.toLowerCase();
+    // Splitting the line on spaces
+    for (String word : newLine.split(" "))
+    {   
+        if (word.length() > 0)
         {
-            if (word.length() > 0)
-            {
-                output.collect(new Text(word), new IntWritable(1));
-            }
+        	output.collect(new Text(word), new IntWritable(1));
         }
     }
+}
 }
 
 

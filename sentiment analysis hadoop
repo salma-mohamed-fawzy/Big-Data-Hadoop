@@ -1,0 +1,158 @@
+////////////////////////////////////////////////Mapper/////////////////////////////////////////////////////////////////////////////
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+
+public class SentimentMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
+    
+    private Set<String> positiveWords = new HashSet<String>();
+    private Set<String> negativeWords = new HashSet<String>();
+    private Set<String> stopWords = new HashSet<String>();
+    
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+      // Load positive, negative, and stop word lists from input files
+        Configuration conf = context.getConfiguration();
+        FileSystem fs = FileSystem.get(conf);
+        Path posWordsFile = new Path(conf.get("positiveWordsFile"));
+        Path negWordsFile = new Path(conf.get("negativeWordsFile"));
+        Path stopWordsFile = new Path(conf.get("stopWordsFile"));
+        positiveWords = loadWordsFromFile(fs, posWordsFile);
+        negativeWords = loadWordsFromFile(fs, negWordsFile);
+        stopWords = loadWordsFromFile(fs, stopWordsFile);
+      }
+    
+    @Override
+    public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+      String line = value.toString().toLowerCase();
+      int sentimentScore = 0;
+      int wordCount = 0;
+      int good = 0;
+      int bad = 0;
+      for (String word : line.split("\\s+")) {
+        if (!stopWords.contains(word)) {
+          if (positiveWords.contains(word)) {
+            sentimentScore++;
+            good++;
+          } else if (negativeWords.contains(word)) {
+              sentimentScore--;
+              bad--;
+            }
+            wordCount++;
+          }
+        }
+        if (wordCount > 0) {
+        	
+          double sentimentScoreNormalized = ((double) sentimentScore / wordCount) * 100;
+          context.write(new Text("Overall Sentiment Score"), new IntWritable((int) sentimentScoreNormalized));
+          
+          double score = ((double) (good-bad) / (good+bad)) * 100;
+          context.write(new Text("Sentiment Score"), new IntWritable((int) score));
+        
+          double posscore = ((double)( good) / (good+bad)) * 100;
+          context.write(new Text("Positive Score"), new IntWritable((int) posscore));
+          
+          double negscore = ((double)( bad) / (good+bad)) * 100;
+          context.write(new Text("Negative Score"), new IntWritable((int) negscore));
+          
+          
+        }
+      }
+    private Set<String> loadWordsFromFile(FileSystem fs, Path filePath) throws IOException {
+        Set<String> words = new HashSet<String>();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(filePath)))) {
+          String line = br.readLine();
+          while (line != null) {
+            words.addAll(Arrays.asList(line.split("\\s+")));
+            line = br.readLine();
+          }
+        }
+        return words;
+      }
+  }
+    
+    
+    
+    ///////////////////////////////////////////////////////////// Reducer ///////////////////////////////////////////////
+    
+    import java.io.IOException;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Reducer;
+
+public class SentimentReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+    
+    @Override
+    public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+        int totalScore = 0;
+        int count = 0;
+        for (IntWritable score : values) {
+          totalScore += score.get();
+          count++;
+        }
+        if (count > 0) {
+          double avgScore = ((double) totalScore / count);
+          context.write(key, new IntWritable((int) avgScore));
+        }
+      }
+    }
+    
+    /////////////////////////////////////////////////////////////  Driver /////////////////////////////////////////////////////
+    
+    import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class SentimentAnalysis {
+    
+    public static void main(String[] args) throws Exception {
+        if (args.length != 5) {
+            System.err.println("Usage: SentimentAnalysis <pos-words-file> <neg-words-file> <stop-words-file> <test-file> <output-dir>");
+            System.exit(1);
+        }
+        
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "Sentiment Analysis");
+        // Set JAR class
+        job.setJarByClass(SentimentAnalysis.class);
+        
+        // Set Mapper class
+        job.setMapperClass(SentimentMapper.class);
+        
+        // Set Reducer class
+        job.setReducerClass(SentimentReducer.class);
+        
+        // Set output Key and Value classes
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+        // Set input and output paths
+        FileInputFormat.addInputPath(job, new Path(args[3]));
+        FileOutputFormat.setOutputPath(job, new Path(args[4]));
+        
+        // Set the path of the positive, negative, and stop words files
+        job.getConfiguration().set("positiveWordsFile", args[0]);
+        job.getConfiguration().set("negativeWordsFile", args[1]);
+        job.getConfiguration().set("stopWordsFile", args[2]);
+        
+        // Run the job and wait for completion
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
+

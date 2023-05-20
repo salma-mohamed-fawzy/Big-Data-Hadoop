@@ -1,0 +1,66 @@
+////////////////////////////////////////////////////mapper////////////////////////////////////////////////////////////
+
+import java.io.IOException;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+
+public class FactorialMapper extends Mapper<LongWritable, Text, Text, LongWritable> {
+  
+  @Override
+  public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+	    long num = Long.parseLong(value.toString());
+	    long fact = 1;
+	    for (long i = 1; i <= num; i++) {
+	      fact *= i;
+	    }
+	    context.write(new Text(value), new LongWritable(fact));
+	  }
+	}
+  
+  /////////////////////////////////////////////////reducer/////////////////////////////////////////////////////////////////
+  
+  import java.io.IOException;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Reducer;
+
+public class FactorialReducer extends Reducer<Text, LongWritable, Text, LongWritable> {
+  
+  @Override
+  public void reduce(Text key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
+	    long fact = 1;
+	    for (LongWritable value : values) {
+	      fact = value.get();
+	    }
+	    context.write(key, new LongWritable(fact));
+	  }
+	}
+  
+  /////////////////////////////////////////////////////////driver///////////////////////////////////////////////////////////
+  
+  import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+
+public class FactorialDriver {
+  
+  public static void main(String[] args) throws Exception {
+	    Configuration conf = new Configuration();
+	    Job job = Job.getInstance(conf, "Factorial Calculation");
+	    job.setJarByClass(FactorialDriver.class);
+	    job.setMapperClass(FactorialMapper.class);
+	    job.setReducerClass(FactorialReducer.class);
+	    job.setOutputKeyClass(Text.class);
+	    job.setOutputValueClass(LongWritable.class);
+	    job.setInputFormatClass(TextInputFormat.class);
+	    job.setOutputFormatClass(TextOutputFormat.class);
+	    TextInputFormat.addInputPath(job, new Path(args[0]));
+	    TextOutputFormat.setOutputPath(job, new Path(args[1]));
+	    System.exit(job.waitForCompletion(true) ? 0 : 1);
+	  }
+	}
